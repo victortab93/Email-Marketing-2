@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import { z } from "zod";
 import { requireRole } from "@/lib/rbac";
 import nodemailer from "nodemailer";
@@ -17,11 +17,15 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: "Invalid" }, { status: 400 });
   const { campaignId, emails } = parsed.data;
 
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-    include: { template: true, recipients: { include: { contact: true } } },
-  });
-  if (!campaign || !campaign.template) {
+  const { rows: cr } = await query(
+    `SELECT c.id, t.subject, t.html
+       FROM campaigns c
+  LEFT JOIN templates t ON t.campaign_id = c.id
+      WHERE c.id = $1`,
+    [campaignId]
+  );
+  const campaign = cr[0];
+  if (!campaign || !campaign.subject || !campaign.html) {
     return Response.json({ error: "Campaign or template not found" }, { status: 404 });
   }
 
@@ -34,50 +38,50 @@ export async function POST(req: Request) {
       : undefined,
   });
 
-  const toSend = emails ?? campaign.recipients.map(r => r.contact.email);
+  let toSend = emails;
+  if (!toSend) {
+    const { rows } = await query<{ email: string }>(
+      `SELECT ct.email FROM campaign_recipients cr
+         JOIN contacts ct ON ct.id = cr.contact_id
+        WHERE cr.campaign_id = $1`,
+      [campaignId]
+    );
+    toSend = rows.map(r => r.email);
+  }
   const from = process.env.EMAIL_FROM ?? "no-reply@emailmarketing.local";
 
   for (const to of toSend) {
     try {
-      await transporter.sendMail({
-        from,
-        to,
-        subject: campaign.template.subject,
-        html: campaign.template.html,
-      });
-      // Record as SENT; in a real system we'd queue and webhook
-      await prisma.campaignRecipient.upsert({
-        where: { campaignId_contactId: { campaignId: campaign.id, contactId: (await ensureContact(to, gate.session!.user.id)).id } },
-        update: { status: "SENT", sentAt: new Date() },
-        create: {
-          campaignId: campaign.id,
-          contactId: (await ensureContact(to, gate.session!.user.id)).id,
-          status: "SENT",
-          sentAt: new Date(),
-        }
-      });
+      await transporter.sendMail({ from, to, subject: campaign.subject, html: campaign.html });
+      const contact = await ensureContact(to, gate.session!.user.id);
+      await query(
+        `INSERT INTO campaign_recipients (campaign_id, contact_id, status, sent_at)
+           VALUES ($1,$2,'SENT', now())
+         ON CONFLICT (campaign_id, contact_id) DO UPDATE SET status = 'SENT', sent_at = now()`,
+        [campaignId, contact.id]
+      );
     } catch (err: any) {
-      // Record failure
-      await prisma.campaignRecipient.upsert({
-        where: { campaignId_contactId: { campaignId: campaign.id, contactId: (await ensureContact(to, gate.session!.user.id)).id } },
-        update: { status: "FAILED", lastError: String(err?.message ?? err) },
-        create: {
-          campaignId: campaign.id,
-          contactId: (await ensureContact(to, gate.session!.user.id)).id,
-          status: "FAILED",
-          lastError: String(err?.message ?? err),
-        }
-      });
+      const contact = await ensureContact(to, gate.session!.user.id);
+      await query(
+        `INSERT INTO campaign_recipients (campaign_id, contact_id, status, last_error)
+           VALUES ($1,$2,'FAILED',$3)
+         ON CONFLICT (campaign_id, contact_id) DO UPDATE SET status = 'FAILED', last_error = EXCLUDED.last_error`,
+        [campaignId, contact.id, String(err?.message ?? err)]
+      );
     }
   }
 
-  await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "SENT", sentAt: new Date() } });
+  await query(`UPDATE campaigns SET status = 'SENT', sent_at = now(), updated_at = now() WHERE id = $1`, [campaignId]);
 
   return Response.json({ ok: true });
 }
 
 async function ensureContact(email: string, userId: string) {
-  const existing = await prisma.contact.findUnique({ where: { email } });
-  if (existing) return existing;
-  return prisma.contact.create({ data: { email, createdById: userId } });
+  const { rows } = await query<{ id: string }>(`SELECT id FROM contacts WHERE email = $1`, [email]);
+  if (rows[0]) return rows[0];
+  const result = await query<{ id: string }>(
+    `INSERT INTO contacts (email, created_by_id) VALUES ($1,$2) RETURNING id`,
+    [email, userId]
+  );
+  return result.rows[0];
 }

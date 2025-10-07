@@ -1,14 +1,16 @@
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
 import { Card } from "@/components/ui/Card";
 
 export default async function AdminHome() {
   const gate = await requireRole(["ADMIN", "MANAGER", "USER"]);
   if (!gate.authorized) return <div className="p-6">Unauthorized</div>;
-  const [campaignCount, contactCount] = await Promise.all([
-    prisma.campaign.count(),
-    prisma.contact.count(),
+  const [{ rows: c1 }, { rows: c2 }] = await Promise.all([
+    query<{ count: string }>(`SELECT COUNT(*)::text as count FROM campaigns`),
+    query<{ count: string }>(`SELECT COUNT(*)::text as count FROM contacts`),
   ]);
+  const campaignCount = Number(c1[0]?.count ?? 0);
+  const contactCount = Number(c2[0]?.count ?? 0);
   return (
     <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
       <Card title="Overview">

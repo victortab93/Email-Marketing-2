@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import { z } from "zod";
 import { requireRole } from "@/lib/rbac";
 
@@ -11,6 +11,9 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid" }, { status: 400 });
   const { userId, role } = parsed.data;
-  const user = await prisma.user.update({ where: { id: userId }, data: { role } });
-  return Response.json({ id: user.id, role: user.role });
+  const result = await query<{ id: string; role: string }>(
+    `UPDATE users SET role = $1, updated_at = now() WHERE id = $2 RETURNING id, role`,
+    [role, userId]
+  );
+  return Response.json(result.rows[0]);
 }

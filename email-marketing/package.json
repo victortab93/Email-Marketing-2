@@ -6,13 +6,15 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:schema": "psql \"$DATABASE_URL\" -f sql/schema.sql",
+    "db:seed": "psql \"$DATABASE_URL\" -f sql/seed.sql"
   },
   "dependencies": {
-    "@prisma/client": "^6.16.3",
     "argon2": "^0.44.0",
+    "dotenv": "^17.2.3",
     "next": "15.5.4",
-    "prisma": "^6.16.3",
+    "pg": "^8.16.3",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },

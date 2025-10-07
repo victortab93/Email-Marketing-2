@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import { z } from "zod";
 import argon2 from "argon2";
 
@@ -15,13 +15,14 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid input" }, { status: 400 });
   }
   const { name, email, password } = parsed.data;
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  const existing = await query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
+  if (existing.rows.length > 0) {
     return Response.json({ error: "User already exists" }, { status: 409 });
   }
   const passwordHash = await argon2.hash(password);
-  const user = await prisma.user.create({
-    data: { name, email, passwordHash }
-  });
-  return Response.json({ id: user.id, email: user.email });
+  const result = await query<{ id: string; email: string }>(
+    `INSERT INTO users (name, email, password_hash) VALUES ($1,$2,$3) RETURNING id, email`,
+    [name, email, passwordHash]
+  );
+  return Response.json(result.rows[0]);
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import fs from "fs";
 import path from "path";
 
@@ -26,14 +26,10 @@ export async function POST(req: NextRequest) {
 
   const publicUrl = `/${uploadDir.replace(/^public\/?/, "")}/${fileName}`;
 
-  const asset = await prisma.mediaAsset.create({
-    data: {
-      templateId: String(templateId),
-      uploadedById: gate.session!.user.id,
-      url: publicUrl,
-      contentType: (file as File).type || "application/octet-stream",
-      size: buffer.length,
-    }
-  });
-  return Response.json({ asset });
+  const result = await query(
+    `INSERT INTO media_assets (template_id, uploaded_by_id, url, content_type, size)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id, template_id AS "templateId", url, content_type AS "contentType", size`,
+    [String(templateId), gate.session!.user.id, publicUrl, (file as File).type || "application/octet-stream", buffer.length]
+  );
+  return Response.json({ asset: result.rows[0] });
 }

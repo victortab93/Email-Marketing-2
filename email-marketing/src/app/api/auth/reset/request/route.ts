@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { query } from "@/lib/db";
 import { z } from "zod";
 import crypto from "crypto";
 import { sendResetEmail } from "@/lib/mailer";
@@ -11,12 +11,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: "Invalid" }, { status: 400 });
   const { email } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return Response.json({ ok: true });
+  const { rows } = await query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email]);
+  if (rows.length === 0) return Response.json({ ok: true });
 
   const token = crypto.randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + 1000 * 60 * 30); // 30 min
-  await prisma.passwordResetToken.create({ data: { email, token, expires } });
+  await query(`INSERT INTO password_reset_tokens (email, token, expires) VALUES ($1,$2,$3)`, [email, token, expires]);
   await sendResetEmail({ to: email, token });
   return Response.json({ ok: true });
 }

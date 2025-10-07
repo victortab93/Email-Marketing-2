@@ -5,6 +5,11 @@ Next.js (App Router) email marketing admin with BFF, PostgreSQL, RBAC, and NextA
 ## Features
 - Next.js 15, TypeScript, Tailwind
 - BFF APIs (no tokens in localStorage)
+- Auth: NextAuth (Credentials + Google for `@gmail.com`), Prisma adapter
+- RBAC: Admin, Manager, User
+- Admin panel: header + sidebar, user info, campaigns, contacts, send
+- Campaign templates (HTML) and media uploads
+- PostgreSQL via Prisma
 - Auth: NextAuth (Credentials + Google for `@gmail.com`) with raw SQL
 - RBAC: Admin, Manager, User
 - Admin panel: header + sidebar, user info, campaigns, contacts, send
@@ -19,6 +24,9 @@ cp .env.example .env
 
 2. Set DATABASE_URL to your Postgres
 
+3. Generate Prisma client and run migrations
+```bash
+npx prisma migrate dev --name init
 3. Create schema and seed data
 ```bash
 psql "$DATABASE_URL" -f sql/schema.sql
@@ -36,7 +44,6 @@ npm run dev
 - Login: http://localhost:3000/login
 
 ## Notes
-- Uses `pg` with parameterized queries throughout to avoid SQL injection
 - Uploads stored in `public/uploads` (configurable via `UPLOAD_DIR`)
 - Emails sent via SMTP at `EMAIL_SERVER_HOST:EMAIL_SERVER_PORT`
 - Admin can promote users via `POST /api/admin/users/role` (body `{ userId, role }`)
